@@ -44,6 +44,7 @@ async function botAction(env,owner,b){
 export default {async fetch(req,env){
  try{
  const url=new URL(req.url),path=url.pathname;
+ if(path==='/assets/neon-woman-v2.jpg')return new Response(Uint8Array.from(atob(NEON_JPEG),c=>c.charCodeAt(0)),{headers:{'Content-Type':'image/jpeg','Cache-Control':'public,max-age=31536000,immutable','X-Content-Type-Options':'nosniff'}});
  if(path==='/favicon.ico')return new Response(null,{status:204});
  if(path==='/downloads/telegram-bot.mjs')return new Response(BOT_SOURCE,{headers:{'Content-Type':'text/javascript; charset=utf-8','Content-Disposition':'attachment; filename="telegram-bot.mjs"','Cache-Control':'no-store'}});
  if(!path.startsWith('/api/'))return new Response(path!=='/account'&&await accountIdentity(req,env)?PAGE:WELCOME,{headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'private, no-store','Vary':'Cookie','X-Content-Type-Options':'nosniff','Referrer-Policy':'same-origin','Content-Security-Policy':"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; connect-src 'self'; base-uri 'none'; object-src 'none'; form-action 'self'"}});
