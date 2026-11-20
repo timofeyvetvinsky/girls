@@ -35,6 +35,8 @@ const HELP=`Рядом · личный дневник знакомств
 /confirm_delete ID — удалить навсегда
 /export — скачать копию с фото
 /cancel — отменить удаление
+/mode girls — добавляю девушек
+/mode boys — добавляю парней
 /before — памятка перед встречей
 /ideas — идеи по интересам
 /after Текст — впечатления после встречи
@@ -71,6 +73,7 @@ export async function startBot(env=process.env){
  const mutate=(body,suffix='')=>action({...body,updateId:String(update.update_id)+suffix});
  if(msg.photo?.length){const p=await selected();const ph=msg.photo.at(-1);if(ph.file_size>10*1024*1024)throw Error('Фото должно быть меньше 10 МБ.');const file=await tg('getFile',{file_id:ph.file_id});if(!file.file_path)throw Error('Не удалось загрузить фото.');let r;try{r=await fetch(`https://api.telegram.org/file/bot${TELEGRAM_BOT_TOKEN}/${file.file_path}`,{signal:AbortSignal.timeout(30000)});}catch{throw Error('Не удалось скачать фото из Telegram.');}if(!r.ok)throw Error('Не удалось скачать фото.');const bytes=await r.arrayBuffer();if(bytes.byteLength>10*1024*1024)throw Error('Фото должно быть меньше 10 МБ.');const form=new FormData();form.append('id',p.id);form.append('updateId',String(update.update_id));form.append('file',new Blob([bytes],{type:'image/jpeg'}),'photo.jpg');await request('upload',form);if(input)await mutate({action:'note',id:p.id,text:input},'-caption');return say('Фото сохранено: '+p.name);}
  if(!cmd&&input){const p=await selected();await mutate({action:'note',id:p.id,text:input});return say('Заметка добавлена: '+p.name);}
+ if(cmd==='mode'){const r=await action({action:'mode',mode:arg||undefined});return say(r.mode==='boys'?'Режим: добавляю парней':'Режим: добавляю девушек');}
  if(cmd==='start'||cmd==='help')return say(HELP);
  if(cmd==='cancel'){state.pendingDelete=null;await persist();return say('Удаление отменено.');}
  if(cmd==='add'){if(!arg)throw Error('Пример: /add Аня');const {profile:p}=await mutate({action:'create',profile:{name:arg}});state.selected=p.id;await persist();return say('Анкета создана и выбрана.\n'+brief(p)+'\n\nОтправь фото, заметку или /set likes Текст.');}
@@ -93,7 +96,7 @@ export async function startBot(env=process.env){
  if(cmd==='reminders')return say((p.reminders||[]).map(r=>(r.done?'✓ ':'')+r.dueAt+' · '+r.text+'\nID: '+r.id).join('\n\n')||'Напоминаний пока нет.');
  if(cmd==='done'){await mutate({action:'reminder_done',id:p.id,reminderId:arg,done:true});return say('Отмечено выполненным.');}
  if(cmd==='history')return say('История: '+p.name+'\n'+[...(p.reflections||[]).map(r=>r.metAt+' · После встречи: '+r.text),...(p.notes||[]).map(n=>n.createdAt+' · '+n.text),...(p.history||[]).map(h=>h.createdAt+' · '+h.title+' '+h.text)].sort().reverse().join('\n\n'));
- if(cmd==='show'){const text=brief(p)+`\nЭтап: ${p.stage}\nКонтакт: ${p.contact||'—'}\nПознакомились: ${p.source||'—'}\nДень рождения: ${p.birthday||'—'}\nИнтересы: ${(p.tags||[]).join(', ')||'—'}\nЛюбит: ${p.likes||'—'}\nНе любит: ${p.avoid||'—'}\nО ней: ${p.about||'—'}\nВстреча: ${p.meetingAt||'—'} ${p.meetingPlace||''}\n\nЗаметки:\n`+(p.notes||[]).map(n=>n.createdAt.slice(0,10)+' · '+n.text).join('\n');await say(text);for(const photo of p.photos||[]){const form=new FormData();form.append('chat_id',TELEGRAM_OWNER_ID);form.append('photo',await request('photos/'+photo.id,undefined,'GET'),'photo');form.append('caption','ID фото: '+photo.id);await tg('sendPhoto',form);}return;}
+ if(cmd==='show'){const text=brief(p)+`\nЭтап: ${p.stage}\nКонтакт: ${p.contact||'—'}\nПознакомились: ${p.source||'—'}\nДень рождения: ${p.birthday||'—'}\nИнтересы: ${(p.tags||[]).join(', ')||'—'}\nЛюбит: ${p.likes||'—'}\nНе любит: ${p.avoid||'—'}\n${p.gender==='male'?'О нём':'О ней'}: ${p.about||'—'}\nВстреча: ${p.meetingAt||'—'} ${p.meetingPlace||''}\n\nЗаметки:\n`+(p.notes||[]).map(n=>n.createdAt.slice(0,10)+' · '+n.text).join('\n');await say(text);for(const photo of p.photos||[]){const form=new FormData();form.append('chat_id',TELEGRAM_OWNER_ID);form.append('photo',await request('photos/'+photo.id,undefined,'GET'),'photo');form.append('caption','ID фото: '+photo.id);await tg('sendPhoto',form);}return;}
  if(cmd==='note'){if(!arg)throw Error('Пример: /note Любит пионы');await mutate({action:'note',id:p.id,text:arg});return say('Заметка сохранена.');}
  if(cmd==='set'){const m=arg.match(/^(\S+)\s+([\s\S]+)$/);if(!m||!allowedFields.has(m[1]))throw Error('Поле не распознано. Посмотри /help.');const key=m[1],value=m[2]==='-'?'':m[2];await mutate({action:'update',id:p.id,profile:{[key]:key==='tags'?value.split(',').map(v=>v.trim()).filter(Boolean):value}});return say('Сохранено: '+key);}
  if(cmd==='status'){await mutate({action:'update',id:p.id,profile:{stage:arg}});return say('Статус обновлён.');}

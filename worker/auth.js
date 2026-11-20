@@ -18,10 +18,12 @@ async function authRequest(req,env,path){
  const account=await env.DB.prepare('SELECT * FROM accounts WHERE email=?').bind(email).first();
  if(path==='/api/auth/register'||path==='/api/auth/recover'){if(password.length<12||password.length>128)fail('Пароль должен содержать от 12 до 128 символов.');}
  if(path==='/api/auth/register'){
+ if(b.diaryMode!==undefined)validDiaryMode(b.diaryMode);
  if(account)fail('Не удалось создать аккаунт. Попробуй войти или восстановить доступ.');
  const id=crypto.randomUUID(),owner=await accountIdentity(req,env)||'account:'+id,salt=randomToken(),recovery=randomToken();
  const password_hash=await passwordHash(password,salt,env);
  try{await env.DB.prepare('INSERT INTO accounts (id,owner,email,salt,password_hash,recovery_hash,created_at) VALUES (?,?,?,?,?,?,?)').bind(id,owner,email,salt,password_hash,await hash(recovery),now()).run();}catch{fail('Не удалось создать аккаунт. Попробуй войти.');}
+ if(b.diaryMode!==undefined)await saveDiaryMode(env,owner,b.diaryMode);
  return sessionResponse(env,id,{ok:true,recoveryCode:recovery});
  }
  if(path==='/api/auth/login'){const candidate=await passwordHash(password.slice(0,128),account?.salt||'invalid-account-salt',env);if(!account||password.length>128||!safeEqual(candidate,account.password_hash))fail('Неверный email или пароль.',401);return sessionResponse(env,account.id);}

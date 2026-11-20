@@ -6,6 +6,7 @@ const str=(v,max=10000)=>typeof v==='string'?v.trim().slice(0,max):'';
 const hash=async value=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value)))).map(v=>v.toString(16).padStart(2,'0')).join('');
 function clean(raw,existing={}) {
  const p={...existing};
+ if('gender' in raw){if(!['female','male'].includes(raw.gender))fail('Выбери тип анкеты: девушка или парень.');p.gender=raw.gender;}else p.gender=existing.gender||'female';
  for(const [k,max] of Object.entries({name:120,city:120,contact:300,source:150,birthday:10,likes:5000,avoid:5000,about:10000,meetingAt:16,meetingPlace:300,archiveReason:500})) if(k in raw)p[k]=str(raw[k],max);
  if(!p.name)fail('Добавьте имя.');
  if('age' in raw){p.age=raw.age===''||raw.age==null?'':Number(raw.age);if(p.age!==''&&(!Number.isInteger(p.age)||p.age<18||p.age>120))fail('Возраст: от 18 до 120 лет.');}
@@ -35,7 +36,8 @@ async function botOwner(req,env){const token=req.headers.get('Authorization')?.r
 async function botAction(env,owner,b){
  if(['remind','reminder_done','reflect'].includes(b.action))return memoryAction(env,owner,b);
  if(b.action==='list')return {profiles:await Promise.all((await all(env,owner)).map(p=>withPhotos(env,owner,p)))};
- if(b.action==='create')return {profile:await save(env,owner,{...clean(b.profile||{}),id:crypto.randomUUID()})};
+ if(b.action==='create')return {profile:await createDiaryProfile(env,owner,b.profile||{})};
+ if(b.action==='mode'){if(b.mode)return {mode:await saveDiaryMode(env,owner,b.mode)};return {mode:await getDiaryMode(env,owner)};}
  if(b.action==='import')return {profile:await save(env,owner,{...imported(b.profile||{}),id:crypto.randomUUID()})};
  if(b.action==='heartbeat'){await env.DB.prepare('UPDATE bot_connections SET last_seen=?,username=? WHERE owner=?').bind(now(),str(b.username,80),owner).run();return {ok:true};}
  const p=await get(env,owner,str(b.id,80));
@@ -49,6 +51,7 @@ async function botAction(env,owner,b){
 export default {async fetch(req,env){
  try{
  const url=new URL(req.url),path=url.pathname;
+ if(path==='/assets/neon-man-v1.jpg')return new Response(Uint8Array.from(atob(BLUE_NEON_JPEG),c=>c.charCodeAt(0)),{headers:{'Content-Type':'image/jpeg','Cache-Control':'public,max-age=31536000,immutable','X-Content-Type-Options':'nosniff'}});
  if(path==='/assets/neon-woman-v2.jpg')return new Response(Uint8Array.from(atob(NEON_JPEG),c=>c.charCodeAt(0)),{headers:{'Content-Type':'image/jpeg','Cache-Control':'public,max-age=31536000,immutable','X-Content-Type-Options':'nosniff'}});
  if(path==='/api/telegram/webhook')return await telegramWebhook(req,env);
  if(path==='/favicon.ico')return new Response(null,{status:204});
@@ -63,8 +66,10 @@ export default {async fetch(req,env){
  if(path==='/api/telegram/server'&&req.method==='GET')return json(await telegramStatus(env,owner));
  if(path==='/api/telegram/pair'&&req.method==='POST')return json(await telegramPair(env,owner));
  if(path==='/api/telegram/server'&&req.method==='DELETE'){await env.DB.batch([env.DB.prepare('DELETE FROM tg_links WHERE owner=?').bind(owner),env.DB.prepare('DELETE FROM tg_pairings WHERE owner=?').bind(owner)]);return json({ok:true});}
- if(path==='/api/profiles'&&req.method==='GET')return json({profiles:await Promise.all((await all(env,owner)).map(p=>withPhotos(env,owner,p)))});
- if(path==='/api/profiles'&&req.method==='POST')return json(await withPhotos(env,owner,await save(env,owner,{...clean(await req.json()),id:crypto.randomUUID()})),201);
+ if(path==='/api/preferences'&&req.method==='GET')return json({mode:await getDiaryMode(env,owner)});
+ if(path==='/api/preferences'&&req.method==='POST')return json({mode:await saveDiaryMode(env,owner,(await req.json()).mode)});
+ if(path==='/api/profiles'&&req.method==='GET')return json({mode:await getDiaryMode(env,owner),profiles:await Promise.all((await all(env,owner)).map(p=>withPhotos(env,owner,p)))});
+ if(path==='/api/profiles'&&req.method==='POST')return json(await withPhotos(env,owner,await createDiaryProfile(env,owner,await req.json())),201);
  if(path==='/api/import'&&req.method==='POST')return json(await withPhotos(env,owner,await save(env,owner,{...imported(await req.json()),id:crypto.randomUUID()})),201);
  let m=path.match(/^\/api\/profiles\/([^/]+)(?:\/(notes|photos|memories))?$/);
  if(m){const id=m[1],sub=m[2];if(sub==='memories'&&req.method==='POST'){const b=await req.json();return json((await memoryAction(env,owner,{...b,id})).profile);}if(!sub&&req.method==='GET')return json(await withPhotos(env,owner,await get(env,owner,id)));if(!sub&&req.method==='PATCH'){const p=await get(env,owner,id);return json(await withPhotos(env,owner,await save(env,owner,clean(await req.json(),p))));}if(!sub&&req.method==='DELETE'){await remove(env,owner,id);return json({ok:true});}if(sub==='notes'&&req.method==='POST'){const r=await botAction(env,owner,{action:'note',id,text:(await req.json()).text});return json(r.profile);}if(sub==='photos'&&req.method==='POST'){const f=await req.formData();return json(await addPhoto(env,owner,id,f.get('file')),201);}}

@@ -7,6 +7,7 @@ export function createLocalEnv(root){
  if(!sqlite.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='profiles'").get())sqlite.exec(readFileSync(new URL('../drizzle/0000_notebook.sql',import.meta.url),'utf8').replaceAll('--> statement-breakpoint',''));
  if(!sqlite.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='accounts'").get())sqlite.exec(readFileSync(new URL('../drizzle/0001_accounts.sql',import.meta.url),'utf8').replaceAll('--> statement-breakpoint',''));
  if(!sqlite.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='tg_links'").get())sqlite.exec(readFileSync(new URL('../drizzle/0002_telegram_webhook.sql',import.meta.url),'utf8').replaceAll('--> statement-breakpoint',''));
+ if(!sqlite.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='diary_preferences'").get())sqlite.exec(readFileSync(new URL('../drizzle/0003_diary_modes.sql',import.meta.url),'utf8'));
  function statement(sql,args=[]){return {bind(...a){return statement(sql,a);},async first(){return sqlite.prepare(sql).get(...args)||null;},async all(){return {results:sqlite.prepare(sql).all(...args)};},async run(){return sqlite.prepare(sql).run(...args);}};}
  const objects=new Map();if(root)mkdirSync(resolve(root,'photos'),{recursive:true});
  const fileFor=k=>resolve(root,'photos',Buffer.from(k).toString('hex'));
