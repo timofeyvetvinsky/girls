@@ -1,0 +1,15 @@
+import {readFile,writeFile,mkdir,rm,cp} from 'node:fs/promises';
+await rm('dist',{recursive:true,force:true});
+await mkdir('dist/server',{recursive:true});
+await mkdir('dist/.openai',{recursive:true});
+const html=await readFile('web/index.html','utf8');
+const css=await readFile('web/style.css','utf8');
+const js=await readFile('web/app.js','utf8');
+const bot=await readFile('bot/telegram-bot.mjs','utf8');
+const page=html.replace('/* APP_CSS */',css).replace('/* APP_JS */',js);
+const welcome=(await readFile('web/welcome.html','utf8')).replace('/* APP_CSS */',css);
+const server=await readFile('worker/server.js','utf8');
+await writeFile('worker/index.js',`const PAGE=${JSON.stringify(page)};\nconst WELCOME=${JSON.stringify(welcome)};\nconst BOT_SOURCE=${JSON.stringify(bot)};\n${server}`);
+await cp('worker/index.js','dist/server/index.js');
+await cp('.openai/hosting.json','dist/.openai/hosting.json');
+console.log('Built public welcome, personal notebooks and Telegram bot download.');

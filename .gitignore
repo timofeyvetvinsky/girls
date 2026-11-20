@@ -1,0 +1,10 @@
+dist/
+site.tar.gz
+worker/index.js
+.local/
+.env
+bot/.env
+.bot-state.json
+.bot-state.json.tmp
+bot/.bot-state.json
+node_modules/
