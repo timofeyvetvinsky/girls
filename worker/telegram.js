@@ -27,7 +27,7 @@ const TG_HELP=`Рядом · Знакомства\nОсновные действ
 /mode girls — добавляю девушек
 /mode boys — добавляю парней
 /help — эта памятка
-Время встреч — то же местное время, которое указано в дневнике. Напоминания доступны внутри дневника, фоновой рассылки нет.`;
+Время встреч — то же местное время, которое указано в дневнике. Напоминания можно получать в Telegram. /notifications — настройки, /places — места для встреч.`;
 async function telegramCall(env,method,body){let r;try{r=await fetch('https://api.telegram.org/bot'+env.TELEGRAM_BOT_TOKEN+'/'+method,{method:'POST',headers:body instanceof FormData?{}:{'Content-Type':'application/json'},body:body instanceof FormData?body:JSON.stringify(body),signal:AbortSignal.timeout(20000)});}catch{throw Error('Telegram временно недоступен.');}const data=await r.json();if(!data.ok)throw Error('Не удалось отправить ответ в Telegram.');return data.result;}
 function telegramUsername(env){const name=env.TELEGRAM_BOT_USERNAME||'ryadom_diary_club_bot';return /^[A-Za-z0-9_]{5,32}$/.test(name)?name:'ryadom_diary_club_bot';}
 function telegramUpdateKey(env,id){const botId=env.TELEGRAM_BOT_TOKEN?.split(':')[0];return /^\d+$/.test(botId||'')?botId+':'+id:String(id);}
@@ -51,6 +51,7 @@ async function handleTelegramMessage(env,msg,updateId){
  const link=await env.DB.prepare('SELECT * FROM tg_links WHERE telegram_id=?').bind(telegramId).first();
  if(!link)return say('Для доступа к личным анкетам открой сайт, войди в свой дневник и нажми «Подключить Telegram» в разделе Telegram-бот. Затем открой одноразовую ссылку.');
  const owner=link.owner;menu=link.selected_id?'profile':'main';
+ if(!msg.photo?.length&&await telegramFeatures(env,link,input,say,updateId))return;
  if(!msg.photo?.length){const flow=await telegramButtonFlow(env,link,input,say);if(flow.handled)return;input=flow.input;const parsed=input.match(/^\/([a-z_]+)(?:@[\w]+)?(?:\s+([\s\S]*))?$/i);cmd=parsed?.[1]?.toLowerCase();arg=parsed?.[2]?.trim()||'';}
  const select=async id=>env.DB.prepare('UPDATE tg_links SET selected_id=?,delete_id=NULL,delete_until=NULL WHERE owner=?').bind(id,owner).run();
  const selected=async()=>{if(!link.selected_id)fail('Сначала выбери анкету: /find Имя или /add Имя.');try{return await withPhotos(env,owner,await get(env,owner,link.selected_id));}catch(e){if(e.status===404)fail('Выбранная анкета удалена. Выбери другую через /find Имя.');throw e;}};
