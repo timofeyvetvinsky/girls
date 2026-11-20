@@ -35,6 +35,13 @@ const HELP=`Рядом · личный дневник знакомств
 /confirm_delete ID — удалить навсегда
 /export — скачать копию с фото
 /cancel — отменить удаление
+/before — памятка перед встречей
+/ideas — идеи по интересам
+/after Текст — впечатления после встречи
+/remind 2026-12-01T12:00 | Прислать книгу — напоминание
+/reminders — напоминания выбранной анкеты
+/done ID — отметить напоминание
+/history — встречи и заметки
 
 Фото отправь прямо в этот чат: оно сохранится в выбранную анкету. Для новой анкеты сначала /add. Все даты встреч — местное время, как на сайте.`;
 const allowedFields=new Set(['name','age','city','contact','source','birthday','tags','likes','avoid','about','archiveReason']);
@@ -79,6 +86,13 @@ export async function startBot(env=process.env){
  }
  if(!cmd)return say('Отправь текст, фото или /help.');
  const p=await selected();
+ if(cmd==='ideas'){const r=await action({action:'ideas',id:p.id});return say(r.ideas.map(i=>i.title+'\n'+i.text+'\n'+i.reason).join('\n\n')||'Подходящих идей пока нет.');}
+ if(cmd==='before')return say('Перед встречей: '+p.name+'\nВстреча: '+(p.meetingAt||'не выбрана')+' '+(p.meetingPlace||'')+'\nЛюбит: '+(p.likes||'пока не записано')+'\nВажно учитывать: '+(p.avoid||'пока нет заметок')+'\nИнтересы: '+(p.tags||[]).join(', ')+'\nПоследние заметки:\n'+(p.notes||[]).slice(0,3).map(n=>n.text).join('\n')+'\nНе забыть:\n'+(p.reminders||[]).filter(r=>!r.done).map(r=>r.text).join('\n'));
+ if(cmd==='after'){if(!arg)throw Error('Пример: /after Хорошо погуляли, хочу повторить');await mutate({action:'reflect',id:p.id,text:arg,metAt:p.meetingAt||new Date().toISOString().slice(0,16),wantAgain:'maybe'});return say('Впечатления добавлены в историю.');}
+ if(cmd==='remind'){const [dueAt,...text]=arg.split('|');await mutate({action:'remind',id:p.id,dueAt:dueAt.trim(),text:text.join('|').trim()});return say('Напоминание сохранено в дневнике. Фоновая рассылка не подключена.');}
+ if(cmd==='reminders')return say((p.reminders||[]).map(r=>(r.done?'✓ ':'')+r.dueAt+' · '+r.text+'\nID: '+r.id).join('\n\n')||'Напоминаний пока нет.');
+ if(cmd==='done'){await mutate({action:'reminder_done',id:p.id,reminderId:arg,done:true});return say('Отмечено выполненным.');}
+ if(cmd==='history')return say('История: '+p.name+'\n'+[...(p.reflections||[]).map(r=>r.metAt+' · После встречи: '+r.text),...(p.notes||[]).map(n=>n.createdAt+' · '+n.text),...(p.history||[]).map(h=>h.createdAt+' · '+h.title+' '+h.text)].sort().reverse().join('\n\n'));
  if(cmd==='show'){const text=brief(p)+`\nЭтап: ${p.stage}\nКонтакт: ${p.contact||'—'}\nПознакомились: ${p.source||'—'}\nДень рождения: ${p.birthday||'—'}\nИнтересы: ${(p.tags||[]).join(', ')||'—'}\nЛюбит: ${p.likes||'—'}\nНе любит: ${p.avoid||'—'}\nО ней: ${p.about||'—'}\nВстреча: ${p.meetingAt||'—'} ${p.meetingPlace||''}\n\nЗаметки:\n`+(p.notes||[]).map(n=>n.createdAt.slice(0,10)+' · '+n.text).join('\n');await say(text);for(const photo of p.photos||[]){const form=new FormData();form.append('chat_id',TELEGRAM_OWNER_ID);form.append('photo',await request('photos/'+photo.id,undefined,'GET'),'photo');form.append('caption','ID фото: '+photo.id);await tg('sendPhoto',form);}return;}
  if(cmd==='note'){if(!arg)throw Error('Пример: /note Любит пионы');await mutate({action:'note',id:p.id,text:arg});return say('Заметка сохранена.');}
  if(cmd==='set'){const m=arg.match(/^(\S+)\s+([\s\S]+)$/);if(!m||!allowedFields.has(m[1]))throw Error('Поле не распознано. Посмотри /help.');const key=m[1],value=m[2]==='-'?'':m[2];await mutate({action:'update',id:p.id,profile:{[key]:key==='tags'?value.split(',').map(v=>v.trim()).filter(Boolean):value}});return say('Сохранено: '+key);}

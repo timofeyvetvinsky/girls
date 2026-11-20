@@ -1,0 +1,13 @@
+function validateMoment(value){if(!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value)||!validDate(value.slice(0,10))||Number(value.slice(11,13))>23||Number(value.slice(14))>59)fail('Проверь дату и время.');return value;}
+function memoryState(p){p.reminders||=[];p.reflections||=[];p.history||=[];return p;}
+async function memoryAction(env,owner,b){const p=memoryState(await get(env,owner,str(b.id,80)));
+ if(b.action==='remind'){const text=str(b.text,1000),dueAt=validateMoment(str(b.dueAt,16));if(!text)fail('Напиши, о чём напомнить.');if(p.reminders.length>=300)fail('В анкете уже 300 напоминаний.');p.reminders.unshift({id:crypto.randomUUID(),text,dueAt,done:false,createdAt:now()});}
+ else if(b.action==='reminder_done'){const item=p.reminders.find(r=>r.id===b.reminderId);if(!item)fail('Напоминание не найдено.',404);item.done=!!b.done;}
+ else if(b.action==='reflect'){const text=str(b.text,10000);if(!text)fail('Запиши хотя бы одно впечатление.');const wantAgain=['yes','maybe','no'].includes(b.wantAgain)?b.wantAgain:'maybe';const metAt=validateMoment(str(b.metAt,16));if(p.reflections.length>=1000)fail('Слишком много записей встреч.');p.reflections.unshift({id:crypto.randomUUID(),text,metAt,feeling:str(b.feeling,80),wantAgain,topics:str(b.topics,2000),nextStep:str(b.nextStep,2000),createdAt:now()});if(b.clearMeeting&&p.meetingAt===metAt){p.meetingAt='';p.meetingPlace='';}}
+ else fail('Неизвестное действие.');p.updatedAt=now();return {profile:await save(env,owner,p)};}
+function importMemories(p,raw){
+ for(const key of ['reminders','reflections','history'])if(raw[key]!==undefined&&!Array.isArray(raw[key]))fail('Неверный формат истории.');
+ p.reminders=(raw.reminders||[]).slice(0,300).map(r=>{const text=str(r.text,1000);if(!text)fail('Пустое напоминание в копии.');return {id:crypto.randomUUID(),text,dueAt:validateMoment(str(r.dueAt,16)),done:!!r.done,createdAt:Number.isFinite(Date.parse(r.createdAt))?r.createdAt:now()};});
+ p.reflections=(raw.reflections||[]).slice(0,1000).map(r=>{if(!str(r.text))fail('Пустое впечатление в копии.');return {id:crypto.randomUUID(),text:str(r.text),metAt:validateMoment(str(r.metAt,16)),feeling:str(r.feeling,80),wantAgain:['yes','no','maybe'].includes(r.wantAgain)?r.wantAgain:'maybe',topics:str(r.topics,2000),nextStep:str(r.nextStep,2000),createdAt:Number.isFinite(Date.parse(r.createdAt))?r.createdAt:now()};});
+ p.history=(raw.history||[]).slice(0,2000).filter(r=>['stage','meeting'].includes(r.type)&&Number.isFinite(Date.parse(r.createdAt))).map(r=>({id:crypto.randomUUID(),type:r.type,title:str(r.title,300),text:str(r.text,1000),createdAt:r.createdAt}));return p;
+}

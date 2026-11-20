@@ -16,11 +16,14 @@ function clean(raw,existing={}) {
  if('favorite' in raw)p.favorite=!!raw.favorite;
  if('tags' in raw)p.tags=Array.isArray(raw.tags)?[...new Set(raw.tags.map(v=>str(v,50)).filter(Boolean))].slice(0,20):[];
  p.notes=existing.notes||[];
- p.createdAt=existing.createdAt||now();p.updatedAt=now();
+ p.history=[...(existing.history||[])];
+ if(existing.id&&'stage' in raw&&raw.stage!==existing.stage)p.history.unshift({id:crypto.randomUUID(),type:'stage',title:'Этап знакомства изменён',text:(existing.stage||'new')+' → '+raw.stage,createdAt:now()});
+ if(existing.id&&('meetingAt' in raw||'meetingPlace' in raw)&&(p.meetingAt!==existing.meetingAt||p.meetingPlace!==existing.meetingPlace)){if(existing.meetingAt&&!p.history.some(h=>h.type==='meeting'&&h.text.includes(existing.meetingAt)))p.history.unshift({id:crypto.randomUUID(),type:'meeting',title:'Ранее запланированная встреча',text:existing.meetingAt+' · '+(existing.meetingPlace||''),createdAt:existing.updatedAt||now()});p.history.unshift({id:crypto.randomUUID(),type:'meeting',title:p.meetingAt?'Встреча запланирована':p.meetingPlace?'Идея для встречи сохранена':'План встречи отменён',text:(p.meetingAt||'Без даты')+' · '+(p.meetingPlace||''),createdAt:now()});}
+ p.history=p.history.slice(0,2000);p.createdAt=existing.createdAt||now();p.updatedAt=now();
  return p;
 }
 function validDate(value){const date=new Date(value+'T12:00:00Z');return !Number.isNaN(date.getTime())&&date.toISOString().slice(0,10)===value;}
-function imported(raw){const p=clean(raw);if(!Array.isArray(raw.notes||[]))fail('Неверный формат заметок.');p.notes=(raw.notes||[]).slice(0,2000).map(n=>{if(!str(n.text)||!Number.isFinite(Date.parse(n.createdAt)))fail('Повреждённая заметка в копии.');return {id:crypto.randomUUID(),text:str(n.text),createdAt:new Date(n.createdAt).toISOString()};});if(Number.isFinite(Date.parse(raw.createdAt)))p.createdAt=new Date(raw.createdAt).toISOString();return p;}
+function imported(raw){const p=clean(raw);if(!Array.isArray(raw.notes||[]))fail('Неверный формат заметок.');p.notes=(raw.notes||[]).slice(0,2000).map(n=>{if(!str(n.text)||!Number.isFinite(Date.parse(n.createdAt)))fail('Повреждённая заметка в копии.');return {id:crypto.randomUUID(),text:str(n.text),createdAt:new Date(n.createdAt).toISOString()};});if(Number.isFinite(Date.parse(raw.createdAt)))p.createdAt=new Date(raw.createdAt).toISOString();return importMemories(p,raw);}
 async function all(env,owner){const r=await env.DB.prepare('SELECT id,data FROM profiles WHERE owner=? ORDER BY updated_at DESC').bind(owner).all();return r.results.map(r=>({...JSON.parse(r.data),id:r.id}));}
 async function get(env,owner,id){const row=await env.DB.prepare('SELECT data FROM profiles WHERE owner=? AND id=?').bind(owner,id).first();if(!row)fail('Анкета не найдена.',404);return {...JSON.parse(row.data),id};}
 async function save(env,owner,p){await env.DB.prepare('INSERT INTO profiles (id,owner,data,updated_at) VALUES (?,?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data,updated_at=excluded.updated_at WHERE profiles.owner=excluded.owner').bind(p.id,owner,JSON.stringify(p),p.updatedAt).run();return p;}
@@ -30,11 +33,13 @@ async function addPhoto(env,owner,id,file){await get(env,owner,id);if((await pho
 async function withPhotos(env,owner,p){return {...p,photos:await photoList(env,owner,p.id)};}
 async function botOwner(req,env){const token=req.headers.get('Authorization')?.replace(/^Bearer /,'');if(!token)fail('Нет ключа подключения.',401);const c=await env.DB.prepare('SELECT owner FROM bot_connections WHERE token_hash=?').bind(await hash(token)).first();if(!c)fail('Ключ подключения недействителен.',401);return c.owner;}
 async function botAction(env,owner,b){
+ if(['remind','reminder_done','reflect'].includes(b.action))return memoryAction(env,owner,b);
  if(b.action==='list')return {profiles:await Promise.all((await all(env,owner)).map(p=>withPhotos(env,owner,p)))};
  if(b.action==='create')return {profile:await save(env,owner,{...clean(b.profile||{}),id:crypto.randomUUID()})};
  if(b.action==='import')return {profile:await save(env,owner,{...imported(b.profile||{}),id:crypto.randomUUID()})};
  if(b.action==='heartbeat'){await env.DB.prepare('UPDATE bot_connections SET last_seen=?,username=? WHERE owner=?').bind(now(),str(b.username,80),owner).run();return {ok:true};}
  const p=await get(env,owner,str(b.id,80));
+ if(b.action==='ideas')return {ideas:dateIdeas(p)};
  if(b.action==='get')return {profile:await withPhotos(env,owner,p)};
  if(b.action==='update')return {profile:await save(env,owner,clean(b.profile||{},p))};
  if(b.action==='note'){const text=str(b.text);if(!text)fail('Заметка пустая.');p.notes.unshift({id:crypto.randomUUID(),text,createdAt:now()});p.updatedAt=now();return {profile:await save(env,owner,p)};}
@@ -57,8 +62,8 @@ export default {async fetch(req,env){
  if(path==='/api/profiles'&&req.method==='GET')return json({profiles:await Promise.all((await all(env,owner)).map(p=>withPhotos(env,owner,p)))});
  if(path==='/api/profiles'&&req.method==='POST')return json(await withPhotos(env,owner,await save(env,owner,{...clean(await req.json()),id:crypto.randomUUID()})),201);
  if(path==='/api/import'&&req.method==='POST')return json(await withPhotos(env,owner,await save(env,owner,{...imported(await req.json()),id:crypto.randomUUID()})),201);
- let m=path.match(/^\/api\/profiles\/([^/]+)(?:\/(notes|photos))?$/);
- if(m){const id=m[1],sub=m[2];if(!sub&&req.method==='GET')return json(await withPhotos(env,owner,await get(env,owner,id)));if(!sub&&req.method==='PATCH'){const p=await get(env,owner,id);return json(await withPhotos(env,owner,await save(env,owner,clean(await req.json(),p))));}if(!sub&&req.method==='DELETE'){await remove(env,owner,id);return json({ok:true});}if(sub==='notes'&&req.method==='POST'){const r=await botAction(env,owner,{action:'note',id,text:(await req.json()).text});return json(r.profile);}if(sub==='photos'&&req.method==='POST'){const f=await req.formData();return json(await addPhoto(env,owner,id,f.get('file')),201);}}
+ let m=path.match(/^\/api\/profiles\/([^/]+)(?:\/(notes|photos|memories))?$/);
+ if(m){const id=m[1],sub=m[2];if(sub==='memories'&&req.method==='POST'){const b=await req.json();return json((await memoryAction(env,owner,{...b,id})).profile);}if(!sub&&req.method==='GET')return json(await withPhotos(env,owner,await get(env,owner,id)));if(!sub&&req.method==='PATCH'){const p=await get(env,owner,id);return json(await withPhotos(env,owner,await save(env,owner,clean(await req.json(),p))));}if(!sub&&req.method==='DELETE'){await remove(env,owner,id);return json({ok:true});}if(sub==='notes'&&req.method==='POST'){const r=await botAction(env,owner,{action:'note',id,text:(await req.json()).text});return json(r.profile);}if(sub==='photos'&&req.method==='POST'){const f=await req.formData();return json(await addPhoto(env,owner,id,f.get('file')),201);}}
  m=path.match(/^\/api\/(?:bot\/)?photos\/([^/]+)$/);
  if(m){const p=await env.DB.prepare('SELECT * FROM photos WHERE owner=? AND id=?').bind(owner,m[1]).first();if(!p)fail('Фото не найдено.',404);if(req.method==='DELETE'){await env.BUCKET.delete(p.object_key);await env.DB.prepare('DELETE FROM photos WHERE owner=? AND id=?').bind(owner,m[1]).run();return json({ok:true});}if(req.method==='GET'){const obj=await env.BUCKET.get(p.object_key);if(!obj)fail('Фото не найдено.',404);return new Response(obj.body,{headers:{'Content-Type':p.mime,'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'}});}}
  if(path==='/api/bot/upload'&&req.method==='POST'){const form=await req.formData();const updateId=str(form.get('updateId'),120);if(updateId){const old=await env.DB.prepare('SELECT result FROM bot_updates WHERE owner=? AND update_id=?').bind(owner,'photo-'+updateId).first();if(old)return json(JSON.parse(old.result));}const result=await addPhoto(env,owner,str(form.get('id'),80),form.get('file'));if(updateId)await env.DB.prepare('INSERT OR IGNORE INTO bot_updates (owner,update_id,result) VALUES (?,?,?)').bind(owner,'photo-'+updateId,JSON.stringify(result)).run();return json(result,201);}
