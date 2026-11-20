@@ -50,6 +50,7 @@ export default {async fetch(req,env){
  try{
  const url=new URL(req.url),path=url.pathname;
  if(path==='/assets/neon-woman-v2.jpg')return new Response(Uint8Array.from(atob(NEON_JPEG),c=>c.charCodeAt(0)),{headers:{'Content-Type':'image/jpeg','Cache-Control':'public,max-age=31536000,immutable','X-Content-Type-Options':'nosniff'}});
+ if(path==='/api/telegram/webhook')return await telegramWebhook(req,env);
  if(path==='/favicon.ico')return new Response(null,{status:204});
  if(path==='/downloads/telegram-bot.mjs')return new Response(BOT_SOURCE,{headers:{'Content-Type':'text/javascript; charset=utf-8','Content-Disposition':'attachment; filename="telegram-bot.mjs"','Cache-Control':'no-store'}});
  if(!path.startsWith('/api/'))return new Response(path!=='/account'&&await accountIdentity(req,env)?PAGE:WELCOME,{headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'private, no-store','Vary':'Cookie','X-Content-Type-Options':'nosniff','Referrer-Policy':'same-origin','Content-Security-Policy':"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; connect-src 'self'; base-uri 'none'; object-src 'none'; form-action 'self'"}});
@@ -59,6 +60,9 @@ export default {async fetch(req,env){
  let owner;
  if(path.startsWith('/api/bot/'))owner=await botOwner(req,env);
  else {owner=await accountIdentity(req,env);if(!owner)fail('Войдите в личный аккаунт.',401);if(!['GET','HEAD'].includes(req.method)&&req.headers.get('Origin')&&req.headers.get('Origin')!==url.origin)fail('Запрос отклонён.',403);}
+ if(path==='/api/telegram/server'&&req.method==='GET')return json(await telegramStatus(env,owner));
+ if(path==='/api/telegram/pair'&&req.method==='POST')return json(await telegramPair(env,owner));
+ if(path==='/api/telegram/server'&&req.method==='DELETE'){await env.DB.batch([env.DB.prepare('DELETE FROM tg_links WHERE owner=?').bind(owner),env.DB.prepare('DELETE FROM tg_pairings WHERE owner=?').bind(owner)]);return json({ok:true});}
  if(path==='/api/profiles'&&req.method==='GET')return json({profiles:await Promise.all((await all(env,owner)).map(p=>withPhotos(env,owner,p)))});
  if(path==='/api/profiles'&&req.method==='POST')return json(await withPhotos(env,owner,await save(env,owner,{...clean(await req.json()),id:crypto.randomUUID()})),201);
  if(path==='/api/import'&&req.method==='POST')return json(await withPhotos(env,owner,await save(env,owner,{...imported(await req.json()),id:crypto.randomUUID()})),201);
