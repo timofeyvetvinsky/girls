@@ -46,12 +46,13 @@ export default {async fetch(req,env){
  const url=new URL(req.url),path=url.pathname;
  if(path==='/favicon.ico')return new Response(null,{status:204});
  if(path==='/downloads/telegram-bot.mjs')return new Response(BOT_SOURCE,{headers:{'Content-Type':'text/javascript; charset=utf-8','Content-Disposition':'attachment; filename="telegram-bot.mjs"','Cache-Control':'no-store'}});
- if(!path.startsWith('/api/'))return new Response(req.headers.get('oai-authenticated-user-id')?PAGE:WELCOME,{headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'private, no-store','Vary':'Cookie','X-Content-Type-Options':'nosniff','Referrer-Policy':'same-origin','Content-Security-Policy':"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; connect-src 'self'; base-uri 'none'; object-src 'none'; form-action 'self'"}});
+ if(!path.startsWith('/api/'))return new Response(path!=='/account'&&await accountIdentity(req,env)?PAGE:WELCOME,{headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'private, no-store','Vary':'Cookie','X-Content-Type-Options':'nosniff','Referrer-Policy':'same-origin','Content-Security-Policy':"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; connect-src 'self'; base-uri 'none'; object-src 'none'; form-action 'self'"}});
  if(!env.DB||!env.BUCKET)fail('Хранилище пока недоступно. Повторите позже.',503);
  if(Number(req.headers.get('Content-Length')||0)>12*1024*1024)fail('Слишком большой запрос.',413);
+ if(path.startsWith('/api/auth/'))return await authRequest(req,env,path);
  let owner;
  if(path.startsWith('/api/bot/'))owner=await botOwner(req,env);
- else {owner=req.headers.get('oai-authenticated-user-id');if(!owner)fail('Войдите в личный аккаунт.',401);if(!['GET','HEAD'].includes(req.method)&&req.headers.get('Origin')&&req.headers.get('Origin')!==url.origin)fail('Запрос отклонён.',403);}
+ else {owner=await accountIdentity(req,env);if(!owner)fail('Войдите в личный аккаунт.',401);if(!['GET','HEAD'].includes(req.method)&&req.headers.get('Origin')&&req.headers.get('Origin')!==url.origin)fail('Запрос отклонён.',403);}
  if(path==='/api/profiles'&&req.method==='GET')return json({profiles:await Promise.all((await all(env,owner)).map(p=>withPhotos(env,owner,p)))});
  if(path==='/api/profiles'&&req.method==='POST')return json(await withPhotos(env,owner,await save(env,owner,{...clean(await req.json()),id:crypto.randomUUID()})),201);
  if(path==='/api/import'&&req.method==='POST')return json(await withPhotos(env,owner,await save(env,owner,{...imported(await req.json()),id:crypto.randomUUID()})),201);
