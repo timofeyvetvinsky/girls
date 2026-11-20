@@ -10,7 +10,7 @@ const page=html.replace('/* APP_CSS */',css).replace('/* APP_JS */',js);
 const welcome=(await readFile('web/welcome.html','utf8')).replace('/* APP_CSS */',css).replace('/* AUTH_JS */',await readFile('web/auth.js','utf8'));
 const blueNeon=(await readFile('web/assets/neon-man-v1.jpg')).toString('base64');
 const neon=(await readFile('web/assets/neon-woman-v2.jpg')).toString('base64');
-const server=(await readFile('worker/modes.js','utf8'))+'\n'+(await readFile('worker/telegram.js','utf8'))+'\n'+(await readFile('web/memory-core.mjs','utf8')).replaceAll('export function ','function ')+'\n'+(await readFile('worker/memories.js','utf8'))+'\n'+(await readFile('worker/auth.js','utf8'))+'\n'+(await readFile('worker/server.js','utf8')); 
+const server=(await readFile('worker/telegram-ui.js','utf8'))+'\n'+(await readFile('worker/modes.js','utf8'))+'\n'+(await readFile('worker/telegram.js','utf8'))+'\n'+(await readFile('web/memory-core.mjs','utf8')).replaceAll('export function ','function ')+'\n'+(await readFile('worker/memories.js','utf8'))+'\n'+(await readFile('worker/auth.js','utf8'))+'\n'+(await readFile('worker/server.js','utf8')); 
 await writeFile('worker/index.js',`const BLUE_NEON_JPEG=${JSON.stringify(blueNeon)};\nconst NEON_JPEG=${JSON.stringify(neon)};\nconst PAGE=${JSON.stringify(page)};\nconst WELCOME=${JSON.stringify(welcome)};\nconst BOT_SOURCE=${JSON.stringify(bot)};\n${server}`);
 await cp('worker/index.js','dist/server/index.js');
 await cp('.openai/hosting.json','dist/.openai/hosting.json');
