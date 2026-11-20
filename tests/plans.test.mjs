@@ -30,6 +30,7 @@ test('reminder time conversion handles midnight, different timezones and nonexis
  const reference=Date.parse('2026-11-20T20:50:00Z');
  assert.deepEqual(extra.parseReminderInput('завтра в 18:00 забронировать столик','Europe/Moscow',reference),{dueAt:'2026-11-21T18:00',text:'забронировать столик'});
  assert.equal(extra.parseReminderInput('через 20 минут прислать книгу','Europe/Moscow',reference).dueAt,'2026-11-21T00:10');
+ assert.equal(extra.parseReminderInput('через 20 минут прислать книгу','Europe/Moscow',reference+40000).dueAt,'2026-11-21T00:11');
 });
 test('queue respects cancellation, pause, ownership, link and future due times; successful delivery is not repeated',async()=>{
  const {call,env,sqlite,link,close}=fixture();const native=globalThis.fetch;const sent=[];
