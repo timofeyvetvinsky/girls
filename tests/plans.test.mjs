@@ -91,3 +91,19 @@ test('backup restores places and reminder history without scheduling duplicate s
  await call('/profiles/'+p.id,'DELETE');const place=(await(await call('/places')).json()).places[0];assert.deepEqual(place.profileIds,[]);assert.equal((await call('/places/'+place.id,'PATCH',{favorite:true})).status,200);
  }finally{close();}
 });
+
+test('compact bot choices hide IDs, select duplicate names correctly and reject expired or replaced choices',async()=>{
+ const {call,env,sqlite,link,close}=fixture();const original=globalThis.fetch;const replies=[];env.TELEGRAM_BOT_TOKEN='TEST';env.TELEGRAM_WEBHOOK_SECRET='test-secret';link();
+ globalThis.fetch=async(url,options)=>{replies.push(JSON.parse(options.body));return new Response(JSON.stringify({ok:true,result:{message_id:1}}));};let id=2000;
+ const send=text=>worker.fetch(new Request('https://notebook.test/api/telegram/webhook',{method:'POST',headers:{'Content-Type':'application/json','X-Telegram-Bot-Api-Secret-Token':'test-secret'},body:JSON.stringify({update_id:id++,message:{from:{id:111},chat:{id:111,type:'private'},text}})}),env);
+ try{
+  const a=await(await call('/profiles','POST',{name:'Саша'})).json();const b=await(await call('/profiles','POST',{name:'Саша'})).json();
+  await send('/menu');const main=replies.at(-1).reply_markup.keyboard;assert.equal(main.length,5);assert(main.flat().find(x=>x.web_app)?.web_app.url.startsWith('https://closeby-notebook-'));assert(main.flat().every(x=>!x.icon_custom_emoji_id));
+  await send('⚙️ Настройки');assert(replies.at(-1).reply_markup.keyboard.flat().some(x=>x.text==='⚙️ Режим'));
+  await send('/list');const choices=replies.at(-1).reply_markup.keyboard.flat().filter(x=>x.text.startsWith('👤 '));assert.equal(choices.length,2);assert(!choices.some(x=>/[a-f0-9]{8}-[a-f0-9]{4}-/.test(x.text)));assert.notEqual(choices[0].text,choices[1].text);
+  const map=JSON.parse(sqlite.prepare('SELECT flow FROM tg_links').get().flow.slice('choices:profile:'.length));await send(choices[1].text);assert.equal(sqlite.prepare('SELECT selected_id FROM tg_links').get().selected_id,map[1].id);
+  await send('/list');const expired=replies.at(-1).reply_markup.keyboard.flat().find(x=>x.text.startsWith('👤 ')).text;sqlite.prepare('UPDATE tg_links SET flow_until=0').run();await send(expired);assert(replies.at(-1).text.includes('истекло'));assert.equal((await(await call('/profiles/'+map[1].id)).json()).notes.length,0);
+  await call('/places','POST',{name:'Кофейня'});await send('/places');const choice=replies.at(-1).reply_markup.keyboard.flat().find(x=>x.text.startsWith('📍 ')).text;assert(!choice.includes((await(await call('/places')).json()).places[0].id));await send(choice);assert(replies.at(-1).text.includes('Кофейня'));
+  const r=await(await call('/reminders','POST',{text:'Забронировать столик',dueAt:future()})).json();await send('/reminders');const done=replies.at(-1).reply_markup.keyboard.flat().find(x=>x.text.startsWith('✓ Готово: '));assert(done);assert.equal(done.style,'success');assert(!done.text.includes(r.id));await send(done.text);assert.equal(sqlite.prepare('SELECT done FROM reminder_jobs WHERE id=?').get(r.id).done,1);
+ }finally{globalThis.fetch=original;close();}
+});
