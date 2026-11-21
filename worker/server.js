@@ -9,7 +9,7 @@ function clean(raw,existing={}) {
  if('gender' in raw){if(!['female','male'].includes(raw.gender))fail('Выбери тип анкеты: девушка или парень.');p.gender=raw.gender;}else p.gender=existing.gender||'female';
  for(const [k,max] of Object.entries({name:120,city:120,contact:300,source:150,birthday:10,likes:5000,avoid:5000,about:10000,meetingAt:16,meetingPlace:300,archiveReason:500})) if(k in raw)p[k]=str(raw[k],max);
  if(!p.name)fail('Добавьте имя.');
- if('age' in raw){p.age=raw.age===''||raw.age==null?'':Number(raw.age);if(p.age!==''&&(!Number.isInteger(p.age)||p.age<18||p.age>120))fail('Возраст: от 18 до 120 лет.');}
+ if('age' in raw){p.age=raw.age===''||raw.age==null?'':Number(raw.age);if(p.age!==''&&(!Number.isInteger(p.age)||p.age<1||p.age>120))fail('Возраст: целое число от 1 до 120 лет.');}
  if('birthday' in raw&&p.birthday&&(!/^\d{4}-\d{2}-\d{2}$/.test(p.birthday)||!validDate(p.birthday)))fail('Проверьте дату рождения.');
  if('meetingAt' in raw&&p.meetingAt&&(!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(p.meetingAt)||!validDate(p.meetingAt.slice(0,10))||Number(p.meetingAt.slice(11,13))>23||Number(p.meetingAt.slice(14))>59))fail('Проверьте время встречи.');
  if('stage' in raw){if(!STAGES.includes(raw.stage))fail('Неизвестный статус.');p.stage=raw.stage;}
